@@ -129,7 +129,7 @@ def check_account(email, password):
                 "scope": "offline_access",
                 "client_id": CLIENT_ID,
                 "client_secret": CLIENT_SECRET,
-                "device_type": "BosSHooTeR",
+                "device_type": "MeowMal",
                 "device_id": device_id,
                 "device_name": "MeowMal"
             }
@@ -309,3 +309,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
