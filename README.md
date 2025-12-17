@@ -24,7 +24,7 @@ A high-performance, multi-threaded Crunchyroll account checker with proxy suppor
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/yourusername/crunchyroll-checker.git
+   git clone https://github.com/Ver3xl/Crunchyroll-Checker.git
    cd crunchyroll-checker
    ```
 
@@ -76,3 +76,4 @@ Valid logins are also saved to `hits.txt` (only `email:pass`).
 ## ⚠️ Disclaimer
 
 This tool is for **educational purposes only**. The developer is not responsible for any misuse. Do not use this tool on accounts you do not own.
+
