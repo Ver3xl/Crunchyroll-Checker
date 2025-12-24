@@ -339,6 +339,7 @@ def main():
     elapsed = time.time() - start_time
     formatted_time = time.strftime("[%H:%M:%S]", time.gmtime(elapsed))
     print(formatted_time)
+    input("\nPress Enter to exit...")
 
 if __name__ == "__main__":
     main()
