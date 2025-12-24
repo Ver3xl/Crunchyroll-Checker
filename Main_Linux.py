@@ -118,6 +118,7 @@ def date_to_unix(date_str):
         return 0
 
 def check_account(email, password):
+    global checked
     attempt_count = 0
     max_attempts = 20
     
@@ -162,6 +163,7 @@ def check_account(email, password):
             elif response.status_code == 401:
                 with lock:
                     print(f"{RED}[-] Invalid {email}{RESET}")
+                    checked += 1
                 return 
             else:
                 continue
