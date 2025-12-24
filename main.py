@@ -8,6 +8,8 @@ import random
 import os
 from datetime import datetime
 import configparser
+import ctypes
+import sys
 
 GREEN = "\033[92m"
 RED = "\033[91m"
@@ -49,7 +51,12 @@ USER_AGENT = "Crunchyroll/deviceType: MeowMal; appVersion: 4.10.0; osVersion: 12
 
 proxies_list = []
 proxy_cycle = None
+proxies_list = []
+proxy_cycle = None
 hits = 0
+checked = 0
+total_accounts = 0
+start_time = 0
 lock = threading.Lock()
 
 def load_proxies():
@@ -93,6 +100,18 @@ def get_proxy():
         }
     else:
         return None
+
+def update_title():
+    while checked < total_accounts:
+        elapsed = time.time() - start_time
+        if elapsed > 0:
+            cpm = int((checked / elapsed) * 60)
+        else:
+            cpm = 0
+        
+        title = f"Crunchyroll Checker | CPM: {cpm} | Hits: {hits} | Checked: {checked}/{total_accounts}"
+        ctypes.windll.kernel32.SetConsoleTitleW(title)
+        time.sleep(1)
 
 def date_to_unix(date_str):
     try:
@@ -278,6 +297,8 @@ def check_account(email, password):
                 with lock:
                     print(f"{YELLOW}[-] FREE: {email}{RESET}")
             
+            with lock:
+                checked += 1
             return 
 
         except Exception:
@@ -285,6 +306,7 @@ def check_account(email, password):
 
     with lock:
         print(f"{RED}[-] Failed {email} (Max Attempts){RESET}")
+        checked += 1
 
 def main():
     os.system('cls') 
@@ -299,8 +321,14 @@ def main():
     except FileNotFoundError:
         print(f"{ACCOUNTS_FILE} not found!")
         return
+    
+    global total_accounts, start_time
+    total_accounts = len(accounts)
 
     print(f"Starting check on {len(accounts)} accounts with {THREADS} threads...")
+    
+    start_time = time.time()
+    threading.Thread(target=update_title, daemon=True).start()
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=THREADS) as executor:
         futures = [executor.submit(check_account, acc[0], acc[1]) for acc in accounts]
@@ -308,6 +336,10 @@ def main():
         
     print("Checking complete.")
     print(f"{hits} / {len(accounts)}")
+    
+    elapsed = time.time() - start_time
+    formatted_time = time.strftime("[%H:%M:%S]", time.gmtime(elapsed))
+    print(formatted_time)
 
 if __name__ == "__main__":
     main()
